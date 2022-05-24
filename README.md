@@ -66,7 +66,7 @@ template <typename RT, typename T1, typename T2> RT max1(T1 a, T2 b) {
 // 1.3.2 Deducing the Return Type, page 11
 // 如果返回值依赖`template parameters`，把推导交给编译器是最简单的，
 // 从`C++14`开始可以使用`auto`关键字，如下：
-template <typename T1, typename T2> auto max(T1 a, T2 b) {
+template <typename T1, typename T2> auto max2(T1 a, T2 b) {
   return b > a ? b : a;
 }
 
@@ -75,14 +75,14 @@ template <typename T1, typename T2> auto max(T1 a, T2 b) {
 // 所有要用`decay`，见下个函数`max3`
 // `->`是`trailing return type`
 template <typename T1, typename T2>
-auto max2(T1 a, T2 b) -> decltype(b < a ? a : b) {
+auto max3(T1 a, T2 b) -> decltype(b < a ? a : b) {
   return b < a ? a : b;
 }
 
 // 1.3.2 Deducing the Return Type, page 12
 // 函数中为什么要用`true`？我的理解是将它当做一个函数声明来理解
 template <typename T1, typename T2>
-auto max3(T1 a, T2 b) -> typename std::decay<decltype(true ? a : b)>::type {
+auto max4(T1 a, T2 b) -> typename std::decay<decltype(true ? a : b)>::type {
   return b < a ? a : b;
 }
 
@@ -91,7 +91,21 @@ auto max3(T1 a, T2 b) -> typename std::decay<decltype(true ? a : b)>::type {
 // `std::common_type`是一个`type trait`，它生成一个结构体，该结构体有
 // 一个类型成员做为结果类型
 template <typename T1, typename T2>
-std::common_type_t<T1, T2> max4(T1 a, T2 b) {
+std::common_type_t<T1, T2> max5(T1 a, T2 b) {
+  return b < a ? a : b;
+}
+
+// 1.4 Default Template Arguments, page 13
+// 这里需要调用传入类型的无参构造函数，似乎有点不那么通用
+template <typename T1, typename T2,
+          typename RT = std::decay_t<decltype(true ? T1() : T2())>>
+RT max6(T1 a, T2 b) {
+  return b < a ? a : b;
+}
+
+// 1.4 Default Template Arguments, page 13
+template <typename T1, typename T2, typename RT = std::common_type_t<T1, T2>>
+RT max7(T1 a, T2 b) {
   return b < a ? a : b;
 }
 
@@ -100,6 +114,20 @@ int main() {
   double b = 4.2;
   int &c = a;
   std::cout << ::max3(c, b) << '\n';
+
+  // 1.3.2 Return Type as Common Type, page 12
+  // 这里`ir`是引用类型，但是遇到`auto`后就被`decayed`了，因为：
+  // "Note that an initialization of type always decays."
+  int i = 42;
+  int const &ir = i;
+  auto ai = ir;
+  std::cout << ai << '\n';
+
+  std::cout << ::max6(4, 7.2) << '\n';
+  std::cout << ::max6(7.2, 4) << '\n';
+  // 因为`max7`的`RT`是最后一个参数，所以`<>`中要写满三个类型
+  std::cout << ::max7<double, int, long double>(7.2, 4) << '\n';
+
   return 0;
 }
 ```
