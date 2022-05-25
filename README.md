@@ -312,3 +312,30 @@ int main() {
 ```
 
 看到这里才发现，第一部分全是粗略的介绍，细节全在第二部分中，难道两年前看这本书的时候就是因为这点儿才放弃的？
+
+``` c++
+#include <vector>
+
+template <typename T> class Stack {
+private:
+  std::vector<T> elems;
+
+public:
+  Stack() = default;
+  // Stack(T const &elem) : elems({elem}) {}
+  // Stack(T elem) : elems({elem}) {}
+  Stack(T elem) : elems({std::move(elem)}) {} // better
+};
+
+int main() {
+  Stack int_stack = 0; // Stack<int> deduced since C++17
+
+  // 2.9 Class Template Argument Deduction, page 41
+  // 这里编译出一大堆错误，因为`Stack`的单参数构造函数是传引用
+  // 传引用：参数不会`decay`，但是传值：参数可以`decay`
+  // 因此这样的构造函数：Stack(T const &elem) : elems({elem}) {}
+  Stack string_stack1 = "bottom"; // Stack<char const[7]> deduced since C++17
+  // 这样的构造函数：Stack(T elem) : elems({elem}) {}
+  Stack string_stack2 = "bottom"; // Stack<char const *> deduced since C++17
+}
+```
