@@ -228,3 +228,87 @@ int max(int a, int b) {
 
 int main() { ::max(47, 11, 33); }
 ```
+
+下面代码中关于友函数那段内容没有看懂。
+
+``` c++
+#include <cassert>
+#include <iostream>
+#include <vector>
+
+// 2.4 Friends, page 31
+template <typename T> class Stack;
+template <typename T>
+std::ostream &operator<<(std::ostream &, Stack<T> const &);
+
+template <typename T> class Stack {
+private:
+  std::vector<T> elems;
+
+public:
+  void push(T const &elem);
+  T pop();
+  T const &top() const;
+  bool empty() const { return elems.empty(); }
+
+  void print_on(std::ostream &strm) const {
+    for (T const &elem : elems) {
+      strm << elem << ' ';
+    }
+  }
+
+  // 2.4 Friends, page 30
+  // 这里不太看得懂，提供了两个选项关于如何添加友函数，但是最后这两个选项
+  // 应用之后依然没有解决呀！
+
+  // 选项1，既不能继续使用`T`，也不能跳过模板参数声明，这里使用`U`
+  // 要么内部的`T`隐藏外部的`T`；要么在命名空间作用域内声明一个非模板函数
+  template <typename U>
+  friend std::ostream &operator<<(std::ostream &strm, Stack<U> const &s) {
+    s.print_on(strm);
+    return strm;
+  }
+
+  // 选项2，要使用前置声明
+  // `operator<<`后跟了`<T>`，这是一个非成员函数模板的特化做为友函数
+  // 原文：a specialization of the nonmember function template as friend.
+  friend std::ostream &operator<<<T>(std::ostream &strm, Stack<T> const &s) {
+    return strm;
+  }
+  // 选项2，要使用前置声明
+  // `operator<<`后没有`<T>`，这是一个新的非模板函数
+  // 原文：a new nontemplate function
+  friend std::ostream &operator<<(std::ostream &strm, Stack<T> const &) {
+    return strm;
+  }
+};
+
+template <typename T> void Stack<T>::push(T const &elem) {
+  elems.push_back(elem);
+}
+
+template <typename T> T const &Stack<T>::top() const {
+  assert(!elems.empty());
+  return elems.back();
+}
+
+template <typename T> T Stack<T>::pop() {
+  assert(!elems.empty());
+  T elem = elems.back();
+  elems.pop_back();
+  return elem;
+}
+
+int main() {
+  Stack<std::pair<int, int>> ps; // note: std::pair<> has no operator<< defined
+  ps.push({4, 5});
+  ps.push({6, 7});
+  std::cout << ps.top().first << '\n';
+  std::cout << ps.top().second << '\n';
+  // 仅当调用下面这个函数时才会出现编译错误，因为如果不使用的话，模板
+  // 不做检查，因为`std::pair<>`没有`<<`操作，所以这里会出错
+  // ps.print_on(std::cout);
+}
+```
+
+看到这里才发现，第一部分全是粗略的介绍，细节全在第二部分中，难道两年前看这本书的时候就是因为这点儿才放弃的？
