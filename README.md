@@ -131,3 +131,100 @@ int main() {
   return 0;
 }
 ```
+
+## <2022-05-25 Wed>
+
+``` c++
+// 1.5 Overloading Function Templates, page 18
+
+#include <cstring>
+#include <iostream>
+
+// call-by-reference
+template <typename T> T const &max(T const &a, T const &b) {
+  std::cout << "T const &(T const &, T const &)\n";
+  return b < a ? a : b;
+}
+
+// call-by-value，这里为什么是传值，紧挨着的下面那段代码有演示
+char const *max(char const *a, char const *b) {
+  std::cout << "char const *(char const *, char const *)\n";
+  return std::strcmp(b, a) < 0 ? a : b;
+}
+
+template <typename T> T const &max(T const &a, T const &b, T const &c) {
+  std::cout << "T const &(T const &, T const &, T const &)\n";
+  return max(max(a, b), c); // error if max(a, b) uses call-by-value
+}
+
+int main() {
+  // 书中问这里为什么没有遇到同样的问题？
+  // `(7, 42, 68)`参考所创建的临时值是在`main()`函数中的，
+  // 它会持续存在，直到语句结束
+  auto m1 = ::max(7, 42, 68);
+  std::cout << m1 << '\n';
+
+  std::cout << "-------------\n";
+
+  char const *s1 = "frederic";
+  char const *s2 = "anica";
+  char const *s3 = "lucas";
+  auto m2 = ::max(s1, s2, s3); // run-time ERROR
+  std::cout << m2 << '\n';
+}
+```
+
+``` c++
+#include <cstring>
+#include <iostream>
+#include <stdio.h>
+
+// 这里虽然是传指针，本质其实是传值，通过程序输出可以看出：
+// -------------------------------------
+// a: 0x562e5395c022, &a: 0x7ffe6df48f38
+// b: 0x562e5395c028, &b: 0x7ffe6df48f40
+// a: 0x562e5395c022, &a: 0x7ffe6df48f18
+// b: 0x562e5395c028, &b: 0x7ffe6df48f10
+// world
+// -------------------------------------
+// call-by-value
+const char *max(const char *a, const char *b) {
+  printf("a: %p, &a: %p\n", a, &a);
+  printf("b: %p, &b: %p\n", b, &b);
+
+  return std::strcmp(b, a) < 0 ? a : b;
+}
+
+int main() {
+  const char *a = "hello";
+  const char *b = "world";
+  printf("a: %p, &a: %p\n", a, &a);
+  printf("b: %p, &b: %p\n", b, &b);
+
+  std::cout << max(a, b) << '\n';
+  return 0;
+}
+```
+
+``` c++
+// 1.5 Overloading Function Templates, page 19
+
+#include <iostream>
+
+template <typename T> T max(T a, T b) {
+  std::cout << "max<T>()\n";
+  return b < a ? a : b;
+}
+
+// 这里只使用了`max<T>()`的版本，而没有用到`int max(int, int)`版本
+// 因为`max<T>()`的定义在前，`int max(int, int)`在后，把它们都放到
+// 这个函数前面，那么`int max(int, int)`这个特化版本将被调用
+template <typename T> T max(T a, T b, T c) { return max(max(a, b), b); }
+
+int max(int a, int b) {
+  std::cout << "int max(int, int)\n";
+  return b < a ? a : b;
+}
+
+int main() { ::max(47, 11, 33); }
+```
