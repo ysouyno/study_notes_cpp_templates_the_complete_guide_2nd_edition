@@ -436,3 +436,147 @@ int main() {
   Message<s17> m17;               // OK since C++17
 }
 ```
+
+``` c++
+#include <iostream>
+#include <string>
+
+template <typename T> void print(T arg) { std::cout << arg << '\n'; }
+
+// 4.1.2 Overloading Variadic and Nonvariadic Templates, page 57
+// 这里没有提供`print()`这个无参函数，但是却能正常执行，
+// 这让我很诧异呀，细想一下发现确实没问题。
+// 如果有两个重载的函数模板仅有一个`trailing parameter pack`的区别，
+// 比如这个代码里的两个`print`模板函数，则`print(T arg)`会被优先
+// 代码里的`Types... args`就是`trailing parameter pack`。
+template <typename T, typename... Types>
+void print(T first_arg, Types... args) {
+  std::cout << "sizeof...(Types): " << sizeof...(Types) << '\n';
+  std::cout << "sizeof...(args): " << sizeof...(args) << '\n';
+  print(first_arg);
+  print(args...);
+}
+
+// 4.1.3 Operator sizeof..., page 58
+// 如果不提供`print()`无参函数，想通过`sizeof...`来计算`args`大小
+// 大于`0`时才调用`print()`是不可行的，因为模板实例化时，`if`的所
+// 有分支都将被实例化，所以无法通过编译
+int main() {
+  std::string s("world");
+  print(7.5, "hello", s);
+}
+```
+
+我还真不记得`->*`是啥了，一分钟读一下：“[Pointer-to-member operators: `.*` and `->*`](https://docs.microsoft.com/en-us/cpp/cpp/pointer-to-member-operators-dot-star-and-star?view=msvc-170)”这里的例子就清楚了。
+
+``` c++
+#include <iostream>
+
+struct Node {
+  int value;
+  Node *left;
+  Node *right;
+  Node(int i = 0) : value(i), left(nullptr), right(nullptr) {}
+};
+
+auto left = &Node::left;
+auto right = &Node::right;
+
+// 4.2 Fold Expressions, page 59
+// traverse tree, using fold expression:
+template <typename T, typename... TP> Node *traverse(T np, TP... paths) {
+  return (np->*...->*paths); // np ->* paths1 ->* paths2 ...
+}
+
+int main() {
+  Node *root = new Node{0};
+  root->left = new Node{1};
+  root->left->right = new Node{2};
+
+  Node *node = traverse(root, left, right);
+}
+```
+
+``` c++
+#include <iostream>
+
+template <typename T> class AddSpace {
+private:
+  T const &ref; // refer to argument passed in constructor
+
+public:
+  AddSpace(T const &r) : ref(r) {}
+  friend std::ostream &operator<<(std::ostream &os, AddSpace<T> s) {
+    return os << s.ref << ' '; // output passed argument and a space
+  }
+};
+
+// 4.2 Fold Expressions, page 59
+// 原来这里需要用`()`把`std::cout`括起来
+template <typename... Args> void print(Args... args) {
+  (std::cout << ... << AddSpace(args)) << '\n';
+}
+
+int main() { print(7, 3.2, "hello"); }
+```
+
+``` c++
+#include <array>
+#include <complex>
+#include <iostream>
+#include <string>
+#include <tuple>
+
+template <typename... Args> void print(Args... args) {
+  (std::cout << ... << args) << '\n';
+}
+
+// 4.4.1 Variadic Expressions, page 62
+// output: 15hellohello(8,4)
+template <typename... T> void print_double(T const &...args) {
+  print(args + args...);
+}
+
+// 4.4.1 Variadic Expressions, page 62
+// output: 8.5498
+// 即：8.5 4 98
+template <typename... T> void add_one(T const &...args) {
+  // ERROR: 1... is a literal with too many decimal points
+  // print(args + 1...);
+  print(args + 1 ...);
+  print((args + 1)...);
+}
+
+// 4.4.1 Variadic Expressions, page 62
+template <typename T1, typename... TN>
+constexpr bool is_homogeneous(T1, TN...) {
+  return (std::is_same<T1, TN>::value && ...); // since C++17
+}
+
+////////////////////////////////////////////////////////////////
+
+// 4.4.3 Variadic Class Templates, page 64
+// 这里不太看得懂，这里是元编程
+template <std::size_t...> struct Indices {};
+
+template <typename T, std::size_t... Idx>
+void print_by_idx(T t, Indices<Idx...>) {
+  print(std::get<Idx>(t)...);
+}
+
+int main() {
+  print_double(7.5, std::string("hello"), std::complex<float>(4, 2));
+  add_one(7.5, 3, 'a');
+  // 4.4.1 Variadic Expressions, page 62
+  // 这个表达式将返回`false`
+  is_homogeneous(43, -1, "hello");
+  // 这个表达式将返回`true`，因为这是传值，所以`arrays become pointers`
+  // 所以参数被`decay`成`const char *`
+  is_homogeneous("hello", " ", "world");
+
+  std::array<std::string, 5> arr = {"Hello", "my", "new", "!", "World"};
+  print_by_idx(arr, Indices<0, 4, 3>()); // output: HelloWorld!
+  auto t = std::make_tuple(12, "monkeys", 2.0);
+  print_by_idx(t, Indices<0, 1, 2>()); // output: 12monkeys2
+}
+```
