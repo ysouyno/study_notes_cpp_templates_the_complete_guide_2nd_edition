@@ -50,7 +50,8 @@ T max(T a, T b) {
 template <typename T> T max(T a, T b);
 
 // 1.3.1 Template Paramters for Return Types, page 10
-// 因为模板推导不了返回值`RT`的类型，所以调用的时候：
+// 因为模板推导不了返回值`RT`的类型，它的位置被放在了最后，
+// 所以调用的时候要指定所有参数的类型，即：
 // max0<int, double, double>(4, 7.2);
 template <typename T1, typename T2, typename RT> RT max0(T1 a, T2 b) {
   return b > a ? b : a;
@@ -71,7 +72,7 @@ template <typename T1, typename T2> auto max2(T1 a, T2 b) {
 }
 
 // 1.3.2 Deducing the Return Type, page 11
-// 这里有一个大缺隐就是返回值可能会是引用类型，因`T`可能是一个引用
+// 这里有一个大缺陷就是返回值可能会是引用类型，因`T`可能是一个引用
 // 所有要用`decay`，见下个函数`max3`
 // `->`是`trailing return type`
 template <typename T1, typename T2>
@@ -146,7 +147,8 @@ template <typename T> T const &max(T const &a, T const &b) {
   return b < a ? a : b;
 }
 
-// call-by-value，这里为什么是传值，紧挨着的下面那段代码有演示
+// call-by-value，这里为什么说是传值而不说是传指针？
+// 紧挨着的下面那段代码有演示
 char const *max(char const *a, char const *b) {
   std::cout << "char const *(char const *, char const *)\n";
   return std::strcmp(b, a) < 0 ? a : b;
@@ -158,7 +160,7 @@ template <typename T> T const &max(T const &a, T const &b, T const &c) {
 }
 
 int main() {
-  // 书中问这里为什么没有遇到同样的问题？
+  // 书中问这里为什么没有遇到同样的问题？（运行时崩溃）
   // `(7, 42, 68)`参考所创建的临时值是在`main()`函数中的，
   // 它会持续存在，直到语句结束
   auto m1 = ::max(7, 42, 68);
@@ -337,5 +339,100 @@ int main() {
   Stack string_stack1 = "bottom"; // Stack<char const[7]> deduced since C++17
   // 这样的构造函数：Stack(T elem) : elems({elem}) {}
   Stack string_stack2 = "bottom"; // Stack<char const *> deduced since C++17
+}
+```
+
+## <2022-05-29 Sun>
+
+意思就是原来都是`T`做为参数，在调用时传的是类型，比如`int`，现在这个“非类型模板参数”就是指调用时传的是值，比如代码中的`20u`。
+
+``` c++
+#include <array>
+#include <cassert>
+#include <iostream>
+#include <string>
+
+template <typename T, auto Maxsize> class Stack {
+public:
+  using size_type = decltype(Maxsize);
+
+private:
+  std::array<T, Maxsize> elems;
+  size_type num_elems;
+
+public:
+  Stack();
+  void push(T const &elem);
+  void pop();
+  T const &top() const;
+  bool empty() const { return num_elems == 0; }
+  size_type size() const { return num_elems; }
+};
+
+template <typename T, auto Maxsize> Stack<T, Maxsize>::Stack() : num_elems(0) {}
+
+template <typename T, auto Maxsize>
+void Stack<T, Maxsize>::push(T const &elem) {
+  assert(num_elems < Maxsize);
+  elems[num_elems] = elem;
+  ++num_elems;
+}
+
+template <typename T, auto Maxsize> void Stack<T, Maxsize>::pop() {
+  assert(!elems.empty());
+  --num_elems;
+}
+
+template <typename T, auto Maxsize> T const &Stack<T, Maxsize>::top() const {
+  assert(!elems.empty());
+  return elems[num_elems - 1];
+}
+
+/////////////////////////////////////////////////////////////
+
+template <auto T> class Message {
+public:
+  void print() { std::cout << T << '\n'; }
+};
+
+extern char const s03[] = "hi"; // external linkage
+char const s11[] = "hi";        // internal linkage
+
+int main() {
+  Stack<int, 20u> int_20_stack;
+  int_20_stack.push(7);
+  std::cout << int_20_stack.top() << '\n';
+  int_20_stack.pop();
+
+  // error: ‘double’ is not a valid type for a template non-type parameter
+  // 3.3 Restrictions for Nontype Template Parameters, page 49
+  // 浮点数和类类是不能做为非类型模板参数的
+  // Stack<double, 22.2> double_stack;
+
+  Stack<std::string, 40> string_stack;
+  string_stack.push("hello");
+  std::cout << string_stack.top() << '\n';
+
+  ///////////////////////////////////////////////////////////
+
+  auto size1 = int_20_stack.size();
+  auto size2 = string_stack.size();
+  if (!std::is_same_v<decltype(size1), decltype(size2)>) {
+    std::cout << "size types differ" << '\n';
+  }
+
+  Message<42> msg1;
+  msg1.print();
+
+  static char const s[] = "hello";
+  Message<s> msg2; // initialize with char const[6] "hello"
+  msg2.print();
+
+  // 3.3 Restrictions for Nontype Template Parameters, page 49
+  // 这里的内容不太感冒
+  Message<s03> m03;               // OK(all versions)
+  Message<s11> m11;               // OK since C++11
+  static const char s17[] = "hi"; // no linkage
+  Message<s17> m17;               // OK since C++17
 }
 ```
