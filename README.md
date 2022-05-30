@@ -580,3 +580,137 @@ int main() {
   print_by_idx(t, Indices<0, 1, 2>()); // output: 12monkeys2
 }
 ```
+
+## <2022-05-30 Mon>
+
+``` c++
+#include <iostream>
+
+class YoClass {
+public:
+  static int SubType;
+};
+
+// 5.1 Keyword typename, page 67
+// `typename`定义一个指向类型为`T::SubType`的指针，
+// 这里编译会失败，因为`YoClass`里没有一个叫`SubType`类型
+// 按照书中的意思，没有这个`typename`，`T::SubType * ptr`
+// 的意思将变成`YoClass::SubType`乘以`ptr`。
+template <typename T> class MyClass {
+public:
+  void foo() { typename T::SubType *ptr; }
+};
+
+int main() {
+  MyClass<YoClass> mc;
+  mc.foo();
+}
+```
+
+``` c++
+#include <iostream>
+
+template <typename T> void foo() {
+  T x;
+  std::cout << "x: " << x << '\n';
+}
+
+// 这是`foo()`的全特化，针对`bool`类型
+template <> void foo<bool>() {
+  bool x;
+  std::cout << "x: " << std::boolalpha << x << '\n';
+}
+
+// 似乎`C++`不支持函数模板的偏特化，在整个`1. Function Templates`章
+// 中找不到关于`Partial Specialization`，而`2. Class Templates`章中
+// 有专门`Partial Specialization`的内容。
+// 这里编译出错：
+// non-class, non-variable partial specialization ‘foo<T*>’ is not allowed
+// template <typename T> void foo<T *>() {
+//   T *x;
+//   std::cout << "x: " << static_cast<T *>(x) << '\n';
+// }
+
+// 那就用类模板的偏特化来实现吧先
+template <typename T> class Foo {
+public:
+  void foo() {
+    T x;
+    std::cout << "x: " << x << '\n';
+  }
+};
+
+// 2.6 Partial specialization, page 33
+// 这是上面`Foo`类的偏特化版本
+template <typename T> class Foo<T *> {
+public:
+  void foo() {
+    T *x;
+    std::cout << "x: " << static_cast<void *>(x) << '\n';
+  }
+};
+
+int main() {
+  // 5.2 Zero Initialization, page 69
+  // 这里分两个部分进行测试，上半部分是`main`函数，可以看出虽然在
+  // `main`函数中变量没有初始化，但是`int`型被初始化为`0`，`bool`
+  // 型初始化为`false`，指针型初始化为`nullptr`，而下半部分函数中
+  // 的未初始化变量则不然。
+  int i, j{};
+  bool t, f{};
+  int *p1, *p2{};
+  std::cout << "i: " << i << '\n';
+  std::cout << "j: " << j << '\n';
+  std::cout << "t: " << std::boolalpha << t << '\n';
+  std::cout << "f: " << std::boolalpha << f << '\n';
+  std::cout << "p1: " << static_cast<void *>(p1) << '\n';
+  std::cout << "p2: " << static_cast<void *>(p2) << '\n';
+
+  std::cout << "--------------------\n";
+
+  foo<int>();
+  foo<bool>();
+  Foo<int *>().foo();
+}
+```
+
+上面代码中提到函数模板偏特化没有实现，可能`C++`标准不支持，可以使用`tag`来实现，我的理解它就像`boost.gil`中的`jpeg_tag()`一样：
+
+``` c++
+// 尝试：函数重载实现函数偏特化
+// 这里使用了`tag`就像是`boost.gil`中的`jpeg_tag()`一样
+// 这里与前段代码中的`foo()`函数有所不同，必须加上形参of
+
+#include <iostream>
+
+struct TypeTag {};
+struct TypePtrTag {};
+
+template <typename T> struct TagDispatchTrait { using Tag = TypeTag; };
+
+template <typename T> struct TagDispatchTrait<T *> { using Tag = TypePtrTag; };
+
+template <typename T> void foo(T a, TypeTag) {
+  T x;
+  std::cout << "TypeTag    x: " << x << '\n';
+}
+
+template <typename T> void foo(T a, TypePtrTag) {
+  T *x;
+  std::cout << "TypePtrTag x: " << static_cast<void *>(x) << '\n';
+}
+
+// 这里与前段代码中的`foo()`函数有所不同，必须加上形参，输出如下：
+// TypeTag    x: 0
+// TypePtrTag x: 0
+// 居然结果也都为`0`，但是目前来说结果不重要。
+template <typename T> void foo(T a) {
+  return foo(a, typename TagDispatchTrait<T>::Tag{});
+}
+
+int main() {
+  int i, *p;
+  foo(i);
+  foo(p);
+}
+```
