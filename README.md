@@ -714,3 +714,155 @@ int main() {
   foo(p);
 }
 ```
+
+## <2022-05-31 Tue>
+
+``` c++
+// 5.4 Templates for Raw Arrays and String Literals, page 72
+
+#include <iostream>
+
+template <typename T> struct MyClass; // primary template
+
+template <typename T, std::size_t SZ> struct MyClass<T[SZ]> {
+  static void print() { std::cout << "print() for T[" << SZ << "]\n"; }
+};
+
+template <typename T, std::size_t SZ> struct MyClass<T (&)[SZ]> {
+  static void print() { std::cout << "print() for T(&)[" << SZ << "]\n"; }
+};
+
+template <typename T> struct MyClass<T[]> {
+  static void print() { std::cout << "print() for T[]\n"; }
+};
+
+template <typename T> struct MyClass<T (&)[]> {
+  static void print() { std::cout << "print() for T(&)[]\n"; }
+};
+
+template <typename T> struct MyClass<T *> {
+  static void print() { std::cout << "print() for T *\n"; }
+};
+
+template <typename T1, typename T2, typename T3>
+void foo(int a1[7], int a2[], // pointers by language rules
+         int (&a3)[42],       // reference array of known bound
+         int (&x0)[],         // reference to array of unknown bound
+         T1 x1,               // passing by value decays
+         T2 &x2, T3 &&x3)     // passing by reference
+{
+  MyClass<decltype(a1)>::print(); // uses MyClass<T *>
+  MyClass<decltype(a2)>::print(); // uses MyClass<T *>
+  MyClass<decltype(a3)>::print(); // uses MyClass<T(&)[SZ]>
+  MyClass<decltype(x0)>::print(); // uses MyClass<T(&)[]>
+  MyClass<decltype(x1)>::print(); // uses MyClass<T *>
+  MyClass<decltype(x2)>::print(); // uses MyClass<T(&)[]>
+  MyClass<decltype(x3)>::print(); // uses MyClass<T(&)[]>
+}
+
+int main() {
+  int a[42];
+  MyClass<decltype(a)>::print(); // uses MyClass<T[SZ]>
+
+  extern int x[];                // forward declare array
+  MyClass<decltype(x)>::print(); // uses MyClass<T[]>
+
+  foo(a, a, a, x, x, x, x);
+}
+
+int x[] = {0, 8, 15}; // define forward-declared array
+```
+
+``` c++
+#include <cassert>
+#include <deque>
+#include <iostream>
+
+template <typename T> class Stack {
+private:
+  std::deque<T> elems;
+
+public:
+  void push(T const &elem) { elems.push_back(elem); }
+  void pop() {
+    assert(!elems.empty());
+    elems.pop_back();
+  }
+  T const &top() const {
+    assert(!elems.empty());
+    return elems.back();
+  }
+  bool empty() const { return elems.empty(); }
+
+  template <typename T2> Stack &operator=(Stack<T2> const &op2);
+
+  // 5.5 Member Templates, page 75
+  // 书上说为了能访问`op2`的所有成员，你可以声明所有其它的`stack`是友元
+  // 但是我为什么发现这段代码没有用处呢？
+  // 因为对于这里有两个版本的赋值操作符，第一个版本声明了一个`tmp`临时
+  // 变量，这当然不用声明友元，第二个版本没有这个临时变量而是直接操作的
+  // `op2`变量，所以它需要下面个声明。
+  // 这里的`T`省略了，因为没有用到，所以可以省略
+  template <typename> friend class Stack;
+};
+
+// 5.5 Member Templates, page 75
+// 第一个版本的赋值操作符
+// template <typename T>
+// template <typename T2>
+// Stack<T> &Stack<T>::operator=(Stack<T2> const &op2) {
+//   Stack<T2> tmp(op2);
+//
+//   elems.clear();
+//   while (!tmp.empty()) {
+//     elems.push_front(tmp.top());
+//     tmp.pop();
+//   }
+//   return *this;
+// }
+
+// 5.5 Member Templates, page 76
+// 第二个版本的赋值操作符
+template <typename T>
+template <typename T2>
+Stack<T> &Stack<T>::operator=(Stack<T2> const &op2) {
+  elems.clear();
+  elems.insert(elems.begin(), op2.elems.begin(), op2.elems.end());
+  return *this;
+}
+
+// output:
+// int_stack1.top(): 6
+// int_stack1.top(): 5
+// int_stack1.top(): 4
+// float_stack.top(): 6
+// float_stack.top(): 5
+// float_stack.top(): 4
+
+int main() {
+  Stack<int> int_stack1, int_stack2;
+  Stack<float> float_stack;
+
+  int_stack1.push(1);
+  int_stack1.push(2);
+  int_stack1.push(3);
+  int_stack2.push(4);
+  int_stack2.push(5);
+  int_stack2.push(6);
+  float_stack.push(1.0);
+  float_stack.push(2.0);
+  float_stack.push(3.0);
+
+  int_stack1 = int_stack2;
+  while (!int_stack1.empty()) {
+    std::cout << "int_stack1.top(): " << int_stack1.top() << '\n';
+    int_stack1.pop();
+  }
+
+  float_stack = int_stack2;
+  while (!float_stack.empty()) {
+    std::cout << "float_stack.top(): " << float_stack.top() << '\n';
+    float_stack.pop();
+  }
+}
+```
