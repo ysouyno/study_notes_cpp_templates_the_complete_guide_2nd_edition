@@ -1025,3 +1025,99 @@ int main() {
   StackForPage85<int, std::vector> v;
 }
 ```
+
+``` c++
+#include <iostream>
+#include <utility>
+
+class X {};
+
+void g(X &) { std::cout << "g() for variable\n"; }
+
+void g(X const &) { std::cout << "g() for constant\n"; }
+
+void g(X &&) { std::cout << "g() for movable object\n"; }
+
+// 6.1 Perfect Forwarding, page 93
+// 为什么会有完美转发？试想下面这三个`f()`重载函数要用模板代替的话
+// 显然`template <typename T> void f(T val);`只能匹配前两个`f()`
+// void f(X &val) { g(val); }
+
+// void f(X const &val) { g(val); }
+
+// void f(X &&val) {
+//   g(std::move(val)); // need std::move() to call g(X &&)
+// }
+
+// 如果上面三个`f()`重载函数不注释掉的话，则不会调用此模板函数
+// output:
+// f<T>(T &&) called: g() for variable
+// f<T>(T &&) called: g() for constant
+// f<T>(T &&) called: g() for movable object
+// f<T>(T &&) called: g() for movable object
+// 6.1 Perfect Forwarding, page 93
+// 我觉得这段比较重要，介绍了`T&&`和`X&&`的不同，具体可看原文。
+// `X&&`对于`X`来说是一个特殊类型，表示右值引用，它仅能被绑定到
+// 一个可移动对象上（`prvalue`直观理解为临时对象，`xvalue`直观
+// 理解为`std::move()`传递的对象），它总是`mutable`；而`T&&`对于
+// `T`来说是`T`声明了一个`forwarding reference`（也叫`universal
+// reference`），它可以绑定`mutable`，`immutable`等等。
+// 注意：`T::iterator&&`是`rvalue reference`而不是`forwarding reference`
+template <typename T> void f(T &&val) {
+  std::cout << "f<T>(T &&) called: ";
+  g(std::forward<T>(val)); // perfect forward val to g()
+}
+
+int main() {
+  X v;
+  X const c;
+
+  f(v);
+  f(c);
+  f(X());
+  // 6.1 Perfect Forwarding, page 93
+  // 书中说：move semantics is not passed through，
+  // 移动语义是不会传递的，没理解这句话！
+  // 这里为什么要加上`std::move`，因为虽然第三个`f(X &&)`参数是右值引用
+  // 但是如果传参的是表达式的话，它的行为就是左值（nonconstant lvalue）
+  f(std::move(v));
+}
+```
+
+``` c++
+#include <iostream>
+#include <string>
+#include <utility>
+
+class Person {
+private:
+  std::string name;
+
+public:
+  template <typename STR>
+  explicit Person(STR &&n) : name(std::forward<STR>(n)) {
+    std::cout << "TMPL-CONSTR for '" << name << "'\n";
+  }
+
+  Person(Person const &p) : name(p.name) {
+    std::cout << "COPY-CONSTR for '" << name << "'\n";
+  }
+
+  Person(Person &&p) : name(std::move(p.name)) {
+    std::cout << "MOVE-CONSTR for '" << name << "'\n";
+  }
+};
+
+int main() {
+  std::string s = "sname";
+  Person p1(s);
+  Person p2("tmp");
+  Person const p2c("ctmp");
+  Person p3c(p2c);
+  // 6.2 Special Member Function Templates, page 97
+  // 上面自己曾问`special member function`是啥？这里再次出现
+  // 这里为什么会出错目前还不理解，端午节后再战
+  // Person p3(p1);
+  Person p4(std::move(p1));
+}
+```
