@@ -792,6 +792,9 @@ int x[] = {0, 8, 15}; // define forward-declared array
 
 template <typename T> class Stack {
 private:
+  // 5.5 Member Templates, page 75
+  // 这里为什么用`std::deque`也是有讲究的，因为它提供了`push_front()`这
+  // 样的函数，我的理解是要不然赋值后会变成倒序
   std::deque<T> elems;
 
 public:
@@ -876,5 +879,149 @@ int main() {
     std::cout << "float_stack.top(): " << float_stack.top() << '\n';
     float_stack.pop();
   }
+}
+```
+
+## <2022-06-01 Wed>
+
+``` c++
+#include <iostream>
+#include <string>
+
+class BoolString {
+private:
+  std::string value;
+
+public:
+  BoolString(std::string const &s) : value(s) {}
+
+  template <typename T = std::string> T get() const {
+    return value; // get value (converted to T)
+  }
+};
+
+// Specialization of Member Function Template, page 78
+// full specialization for BoolString::get<>() for bool
+// 注意，你不需要声明特化函数，同时`C++`也声明不了特化函数，你只
+// 需要定义它们即可。
+// 因为这里是一个全特化函数，如果在头文件里（我这里放在源文件里）
+// 用`inline`关键字避免出现错误（如果在别的翻译单元里已经包含了
+// 这个定义的话）
+// 书上还说成员函数模板支持偏特化和全特化，这里是全特化，偏特化
+// 是什么样子的？
+template <> inline bool BoolString::get<bool>() const {
+  return value == "true" || value == "1" || value == "on";
+}
+
+// Special Member Function Templates, page 79
+// 这里的`special member function`指的是什么函数？然后紧接着又说
+// `Member template`不能算做`special member function`因为它们复
+// 制和移动对象。
+// `template constructors`，`template assignment operators`不会替换
+// `predefined constructors or assignment operators`。
+// 1，`template constructor or assignment operator`比`predefined copy/move
+// constructor or assignment operator`更好的匹配。
+// 2，对复制移动构造函数模板化是不太容易的。
+
+// 5.5.1 The .template Construct, page 79
+// 这里暂时没看懂
+
+int main() {
+  std::cout << std::boolalpha;
+  BoolString s1("hello");
+  std::cout << s1.get() << '\n';
+  std::cout << s1.get<bool>() << '\n';
+  BoolString s2("on");
+  std::cout << s2.get<bool>() << '\n';
+}
+```
+
+``` c++
+#include <array>
+#include <iostream>
+
+// 5.6 Variable Templates, page 81
+// 这个我翻译成变量模板，对我来说它比较新，代码看起来不太直观。
+template <typename T> constexpr T pi{3.1415926535897932385};
+
+template <int N>
+std::array<int, N> arr{}; // array with N elements, zero-initialized
+
+template <auto N>
+constexpr decltype(N) dval = N; // type of dval depends on passed value
+
+// Variable Templates for Data Members, page 82
+template <typename T> class my_numeric_limits {
+public:
+  static constexpr bool is_signed = false;
+};
+
+// Variable Templates for Data Members, page 82
+// 有了这个定义，就可以写出`main`函数里那样的代码了
+template <typename T> constexpr bool issigned = my_numeric_limits<T>::is_signed;
+
+// Type Traits Suffix _v, page 83
+// 标准库里那些`_v`，`_t`的伎俩就是变量模板的作用
+template <typename T> constexpr bool is_const_v = std::is_const<T>::value;
+
+int main() {
+  std::cout << pi<double> << '\n';
+  std::cout << pi<float> << '\n';
+
+  std::cout << dval<'c'> << '\n'; // N has value 'c' of type char
+  arr<10>[0] = 42;
+  for (std::size_t i = 0; i < arr<10>.size(); ++i) {
+    std::cout << arr<10>[i] << ' ';
+  }
+  std::cout << '\n';
+
+  // 这里输出都是相同的，只是前者使用了变量模板而已
+  std::cout << std::boolalpha << issigned<char> << '\n';
+  std::cout << std::boolalpha << my_numeric_limits<char>::is_signed << '\n';
+}
+```
+
+``` c++
+#include <deque>
+#include <iostream>
+#include <vector>
+
+// 5.7 Template Template Parameters, page 83
+// 直观的理解这里就是让这种写法；
+// Stack<int, std::vector<int>> vstack;
+// 变成这种写法：
+// Stack<int, std::vector> vstack;
+
+template <typename T,
+          template <typename Elem, typename Alloc = std::allocator<Elem>>
+          class Cont = std::deque>
+class StackForPage85 {};
+
+// 这里的`Elem`可以省略，因为它没有被使用，成员函数也要进行相应修改
+// template <typename T,
+//           template <typename Elem> class Cont = std::deque>
+template <typename T, template <typename> class Cont = std::deque> class Stack {
+private:
+  Cont<T> elems;
+
+public:
+  void push(T const &);
+  void pop();
+  T const &top() const;
+  bool empty() const { return elems.empty(); }
+};
+
+template <typename T, template <typename> class Cont>
+void Stack<T, Cont>::push(T const &elem) {
+  elems.push_back(elem);
+}
+
+int main() {
+  // Template Template Argument Matching, page 85
+  // 这里确实正如书上所说，如果使用`-std=c++11`或`-std=c++14`都会编译失败
+  // Stack<int, std::vector> vstack;
+  // 通过改成`StackForPage85`的声明就可以编译通过了，因为在`c++17`之前的
+  // 标准库里`std::deque`不止有一个参数，所以这里匹配不成功
+  StackForPage85<int, std::vector> v;
 }
 ```
