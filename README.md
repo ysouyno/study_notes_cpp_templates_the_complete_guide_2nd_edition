@@ -159,6 +159,17 @@ template <typename T> T const &max(T const &a, T const &b, T const &c) {
   return max(max(a, b), c); // error if max(a, b) uses call-by-value
 }
 
+// output:
+// T const &(T const &, T const &, T const &)
+// T const &(T const &, T const &)
+// T const &(T const &, T const &)
+// 68
+// -------------
+// T const &(T const &, T const &, T const &)
+// char const *(char const *, char const *)
+// char const *(char const *, char const *)
+// Segmentation fault (core dumped)
+
 int main() {
   // 书中问这里为什么没有遇到同样的问题？（运行时崩溃）
   // `(7, 42, 68)`参考所创建的临时值是在`main()`函数中的，
@@ -406,7 +417,7 @@ int main() {
 
   // error: ‘double’ is not a valid type for a template non-type parameter
   // 3.3 Restrictions for Nontype Template Parameters, page 49
-  // 浮点数和类类是不能做为非类型模板参数的
+  // 浮点数类型和类类型是不能做为非类型模板参数的
   // Stack<double, 22.2> double_stack;
 
   Stack<std::string, 40> string_stack;
@@ -679,7 +690,7 @@ int main() {
 ``` c++
 // 尝试：函数重载实现函数偏特化
 // 这里使用了`tag`就像是`boost.gil`中的`jpeg_tag()`一样
-// 这里与前段代码中的`foo()`函数有所不同，必须加上形参of
+// 这里与前段代码中的`foo()`函数有所不同，必须加上形参
 
 #include <iostream>
 
@@ -1119,5 +1130,102 @@ int main() {
   // 这里为什么会出错目前还不理解，端午节后再战
   // Person p3(p1);
   Person p4(std::move(p1));
+}
+```
+
+## <2022-06-07 Tue>
+
+``` c++
+#include <iostream>
+#include <string>
+#include <utility>
+
+// 6.4 Using enable_if<>, page 100
+// `main()`函数中的那个`Person p3(p1)`的错误可以用`std::enable_if`来
+// 解决
+template <typename T>
+// using EnableIfString =
+//     std::enable_if_t<std::is_convertible_v<T, std::string>>;
+// 6.4 Using enable_if<>, page 101
+// 上行`std::is_convertible`它要求类型是隐式可转换的，通过使用
+// `std::is_constructible<>`，我们还允许显式转换用于初始化
+// 注意它们的参数位置是颠倒的
+using EnableIfString =
+    std::enable_if_t<std::is_constructible_v<std::string, T>>;
+
+class Person {
+private:
+  std::string name;
+
+public:
+  // 6.4 Using enable_if<>, page 100
+  // 因此这里要改成：
+  // template <typename STR>
+  template <typename STR, typename = EnableIfString<STR>>
+  explicit Person(STR &&n) : name(std::forward<STR>(n)) {
+    std::cout << "TMPL-CONSTR for '" << name << "'\n";
+  }
+
+  Person(Person const &p) : name(p.name) {
+    std::cout << "COPY-CONSTR for '" << name << "'\n";
+  }
+
+  Person(Person &&p) : name(std::move(p.name)) {
+    std::cout << "MOVE-CONSTR for '" << name << "'\n";
+  }
+};
+
+int main() {
+  std::string s = "sname";
+  Person p1(s);
+  Person p2("tmp");
+  Person const p2c("ctmp");
+  Person p3c(p2c);
+  // 6.2 Special Member Function Templates, page 97
+  // 上面自己曾问`special member function`是啥？这里再次出现这里为什
+  // 么会出错目前还不理解，端午节后再战这里为什么会出错，书中说根据
+  // `C++`的重载解析规则，在此代码中：
+  // template <typename STR>
+  // Person(STR &&n)
+  // 比：
+  // Person(Person const &p)
+  // 更好的匹配，所以会出错，因为你不能把`Person`赋给`std::string`的
+  // `name`成员，书上同时也说了，为什么前者比后者更好的匹配，因为对
+  // 于前者来说，`STR`只是被替换为`Person &`，而后者必须要将它转化为
+  // `const`类型。同时书上也说了，可以提供一个`Person(Person &p)`这
+  // 样的非`const`的拷贝构造函数，但是考虑到派生类对象，成员模板依然
+  // 是更好的匹配，因此当传传递的参数是`Person`或可以转化为`Person`的
+  // 表达式时你真正需要做的是禁用成员模板。
+  // 然后引出将要讲的内容：std::enable_if<>
+  Person p3(p1);
+  Person p4(std::move(p1));
+}
+```
+
+``` c++
+#include <iostream>
+
+class C {
+public:
+  C() = default;
+  // 将预定义的拷贝构造函数显示删除不能达到目的，编译不通过
+  // C(C const &) = delete;
+
+  // Disable Special Member Functions, page 102
+  // 可以用这个`tricky solution`：
+  // user-define the predefined copy constructor as deleted
+  // (with convertion to volatile to enable better matches)
+  // 经过这样的修改就可以输出`tmpl copy ...`了，这里的`volatile`
+  // 用得很精髓啊！完全看不懂。
+  C(C const volatile &) = delete;
+  template <typename T> C(T const &) { std::cout << "tmpl copy constructor\n"; }
+};
+
+int main() {
+  C x;
+
+  // Disable Special Member Functions, page 102
+  // 如何让这里能调用到成员模板呢？即可以输出上面的`tmpl copy ...`
+  C y{x};
 }
 ```
