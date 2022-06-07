@@ -1229,3 +1229,99 @@ int main() {
   C y{x};
 }
 ```
+
+``` c++
+#include <iostream>
+#include <string>
+#include <type_traits>
+
+// 7.2.1 Passing by Constant Reference, page 109
+// 这里：“What is the callee doing with that address?”后面的内容不理解，
+// 跟上下文的关系是什么？直接理解的话是因为传引用实际上就是传指针，被
+// 调用者，即`callee`可能会对该地址做任何事情，这样的话函数返回后调用者
+// 需要重新加载这些值的操作可能会比较昂贵。
+// 原文：“You may be thinking that we are passing by constant reference:
+// Cannot the compiler deduce from that that no change can happen? ...”
+// 谷歌的翻译：“编译器不能从中推断出不会发生任何变化吗？不幸的是，情况
+// 并非如此，因为调用者可能通过它自己的非`const`引用来修改被引用的对象”
+// 这里好像与：
+// Passing by Reference Does Not Decay, page 109
+// 联系起来了，因为`call parameter`被声明为`T const &`，`template parameter T`
+// 本身不会被推导为`const`，比如：
+template <typename T> void print_ref(T const &arg) {}
+
+// 7.2.2 Passing by Nonconstant Reference, page 110
+template <typename T> void out_ref(T &arg) {
+  if (std::is_array<T>::value) {
+    std::cout << "got array of " << std::extent<T>::value << " elems\n";
+  }
+}
+
+// 7.2.2 Passing by Nonconstant Reference, page 111
+template <typename T> void out_ref1(T &arg) {
+  static_assert(!std::is_const<T>::value,
+                "out parameter of foo<T>(T &) is const");
+}
+
+template <typename T, typename = std::enable_if_t<!std::is_const<T>::value>>
+void out_ref2(T &arg) {}
+
+// 这里编译报错（-std=c++20）：
+// main.cpp:37:10: error: expression must be enclosed in parentheses
+//    42 | requires !std::is_const_v<T> void out_ref3(T & arg) {}
+//       |          ^~~~~~~~~~~~~~~~~~~
+//       |          (                  )
+// template <typename T>
+// requires !std::is_const_v<T> void out_ref3(T & arg) {}
+
+// 7.2.3 Passing by Forwarding Reference, page 112
+// 这里的问题是，如果`T`被推导成比如是`int &`类型，则`x`是需要初始化的
+template <typename T>
+void pass_ref(T &&arg) { // arg is a `forwarding reference`
+  T x;
+}
+
+int main() {
+  std::string const c = "hi";
+  print_ref(c);    // T deduced as `std::string`, arg is `std::string const &`
+  print_ref("hi"); // T deduced as `char[3]`, arg is `char const(&)[3]`
+                   // Passing by Reference Does Not Decay, page 110
+                   // 这样在`print_ref`中的局部变量`T`不是`const`，这里好像和
+                   // 109页的内容对应起来了？
+
+  // 7.2.2 Passing by Nonconstant Reference, page 110
+  std::string s = "hi";
+  out_ref(s); // OK: T deduced as `std::string`, arg is `std::string &`
+  /*
+  std::string return_string();
+  out_ref(std::string("hi")); // ERROR: not allowed to pass a temporary(prvalue)
+  out_ref(return_string());   // ERROR: not allowed to pass a temporary(prvalue)
+  out_ref(std::move(s));      // ERROR: not allowed to pass an xvalue
+  */
+  int arr[4];
+  out_ref(arr); // OK: T deduced as `int[4]`, arg is `int(&)[4]`
+
+  // 上面那三个错误是可以理解的，如果传入`const`引用，则上面三个表达式却编译通过
+  // 这样的话在`out_ref`中传入的参数就不能被修改了，它跟`print_ref`正好相反了
+  // 正如110页所说，模板采用了一个小伎俩才能让这种情况发生，具体啥伎俩书上目前没
+  // 讲，但是如果你想禁用这种功能，即把`const`对象传给非`const`引用这个功能，你
+  // 可以试试另三种`out_ref`函数。
+  out_ref(std::move(c));
+  out_ref("hi");
+
+  // error: static assertion failed: out parameter of foo<T>(T &) is const
+  // out_ref1(std::move(c));
+  // out_ref1("hi");
+
+  // out_ref2(std::move(c));
+  // out_ref2("hi");
+
+  // out_ref3(std::move(c));
+  // out_ref3("hi");
+
+  // 7.2.3 Passing by Forwarding Reference, page 112
+  pass_ref(42); // OK: T deduced as int
+  int i;
+  // pass_ref(i); // ERROR: T deduced as `int &`
+}
+```
