@@ -1325,3 +1325,86 @@ int main() {
   // pass_ref(i); // ERROR: T deduced as `int &`
 }
 ```
+
+``` c++
+#include <functional> // for std::cref()
+#include <iostream>
+#include <string>
+
+void print_string(std::string const &s) { std::cout << s << '\n'; }
+
+// 7.3 Using std::ref() and std::cref(), page 113
+// 这里讲了`std::ref`和`std::cref`要有一种能力，一个隐式转化回原类型的能力，
+// 或者生成原始对象的能力。
+// 虽然是传值这里，但是有了`std::ref`和`std::cref`整得就像传引用一样，它们
+// 的内部实现是：创建了一个`std::reference_wrapper<>`对象，该对象引用了原
+// 始参数并以值传递该对象。
+// 同时书中下面的内容讲到了为什么这里还需要一个`print_string`函数呢？
+// 因为上面讲的`std::ref`和`std::cref`的转化为原类型的能力就体现在这里。
+template <typename T> void print_t(T arg) {
+  print_string(arg); // might convert arg back to std::string
+}
+
+// 7.3 Using std::ref() and std::cref(), page 113
+// 下面的`print_v(std::cref(s));`会报错，因为`std::reference_wrapper<>`没有
+// `<<`的定义
+template <typename T> void print_v(T arg) { std::cout << arg << '\n'; }
+
+int main() {
+  std::string s = "hello";
+  print_t(s);            // print s passed by value
+  print_t(std::cref(s)); // print s passed "as if by reference"
+
+  // print_v(std::cref(s));
+}
+```
+
+``` c++
+#include <iostream>
+#include <type_traits>
+
+// 7.5 Dealing with Return Values, page 117
+// 就像在前面讲的，模板参数`T`不能保证它不是一个引用，`T`在某些情况下
+// 可能会被隐式的推导成一个引用类型。
+template <typename T> T ret_ref(T &&p) { // p is a forwarding reference
+  return T{}; // OOPS: returns by reference when called for lvalues
+}
+
+template <typename T> T ret_val(T p) { // Note: T might become a reference
+  return T{}; // OOPS: returns a reference if T is a reference
+}
+
+// 7.5 Dealing with Return Values, page 118
+template <typename T> typename std::remove_reference<T>::type ret_val1(T p) {
+  return T{}; // always returns by value
+}
+
+template <typename T>
+auto ret_val2(T p) { // by-value return type deduced by compiler
+  return T{};        // always returns by value
+}
+
+int main() {
+  int x;
+  // ret_ref(x);        // ERROR
+  // ret_val<int &>(x); // ERROR
+
+  // 7.5 Dealing with Return Values, page 118
+  // 按照书上的说法，下面的两个应该能编译成功的，但是为什么会出错：
+  // error: cannot bind non-const lvalue reference of type ‘int&’ to an rvalue
+  // of type ‘int’
+  ret_val1<int &>(x); // ERROR
+  ret_val2<int &>(x); // ERROR
+}
+
+// 7.6 Recommended Template Parameter Declaration, page 118
+// 这里很值得一读
+// General Recommendations, page 119
+// 要记住这里的选项，我只记录第一个，其它看原文：默认情况下，声明模板参数为
+// 传值类型，因为它简单并且可以使用字面字符串做为参数，对于小的参数，临时对象
+// 或者可移动对象，性能方面还可以，调用者可以使用`std::ref()`和`std::cref()`
+// 避免为大对象的传递付出昂贵的拷贝代价。
+// The std::make_pair() Example, page 120
+// 这里讲了从`C++98`，`C++03`至`C++11`，`std::make_pair()`这个函数的演变过程
+// 值得一看。
+```
