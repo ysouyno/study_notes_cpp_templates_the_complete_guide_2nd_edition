@@ -1408,3 +1408,35 @@ int main() {
 // 这里讲了从`C++98`，`C++03`至`C++11`，`std::make_pair()`这个函数的演变过程
 // 值得一看。
 ```
+
+## <2022-06-08 Wed>
+
+``` c++
+#include <iostream>
+
+template <unsigned p, unsigned d> struct do_is_prime {
+  static constexpr bool value = (p % d != 0) && do_is_prime<p, d - 1>::value;
+};
+
+// 8.1 Template Metaprogramming, page 125
+// 1，递归展开`do_is_prime<>`去迭代所有除数，从`p/2`至`2`
+// 2，编特化版本，即此结构体，`d`为`2`时做为结束递归的条件
+template <unsigned p> struct do_is_prime<p, 2> {
+  static constexpr bool value = (p % 2 != 0);
+};
+
+template <unsigned p> struct is_prime {
+  static constexpr bool value = do_is_prime<p, p / 2>::value;
+};
+
+// special cases (to avoid endless recursion with template instantiation)
+template <> struct is_prime<0> { static constexpr bool value = false; };
+template <> struct is_prime<1> { static constexpr bool value = false; };
+template <> struct is_prime<2> { static constexpr bool value = true; };
+template <> struct is_prime<3> { static constexpr bool value = true; };
+
+int main() {
+  // 为了打印输出，要加上`::value`
+  std::cout << "9 is prime: " << std::boolalpha << is_prime<9>::value << '\n';
+}
+```
