@@ -1647,3 +1647,18 @@ int main() {
   }
 }
 ```
+
+第9章粗略的看了看，看完感觉啥也没看！下面的第10章我觉得比较重要，对于阅读英文原著而言！
+
+| Name           | Explanation                                                                                                                                           |
+|:--------------:|-------------------------------------------------------------------------------------------------------------------------------------------------------|
+| class types    | structs, classes and unions                                                                                                                           |
+| class          | the keyword class or the keyword struct                                                                                                               |
+| class template | the class is a template<br>(it is a parameterized description of a family of classes)                                                                 |
+| template class | 1. as a synonym for class template<br>2. to refer to classes generated from templates.<br>3. to refer to classes with a name that is a `template-id`. |
+
+注意：
+1. 上面的`class type`包括`unions`，而`class`不包括。
+2. 因为`template class`的不准确性，书中避免使用`template class`这种说法。
+
+不搬这些概念和定义了，看原书去吧！
