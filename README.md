@@ -1435,8 +1435,126 @@ template <> struct is_prime<1> { static constexpr bool value = false; };
 template <> struct is_prime<2> { static constexpr bool value = true; };
 template <> struct is_prime<3> { static constexpr bool value = true; };
 
+////////////////////////////////////////////////////////////////////
+
+// 8.2 Computing with constexpr, page 126
+// 这是`c++11`的写法，`constexpr`限制只能使用一条语句，所以使用三元运算符
+constexpr bool do_is_prime_c11(unsigned p, unsigned d) {
+  return d != 2
+             ? (p % d != 0) &&
+                   do_is_prime_c11(p, d - 1) // check this and smaller divisors
+             : (p % 2 != 0);                 // end recursion if devisor is 2
+}
+
+constexpr bool is_prime_c11(unsigned p) {
+  return p < 4 ? !(p < 2) // handle special cases
+               : do_is_prime_c11(
+                     p, p / 2); // start recursion with divisor with p/2
+}
+
+////////////////////////////////////////////////////////////////////
+
+// 8.2 Computing with constexpr, page 126
+// 这是`c++14`的写法，更直观，像平常写的代码
+constexpr bool is_prime_c14(unsigned int p) {
+  for (unsigned int d = 2; d < p / 2; ++d) {
+    if (p % d == 0) {
+      return false;
+    }
+  }
+  return p > 1;
+}
+
 int main() {
   // 为了打印输出，要加上`::value`
   std::cout << "9 is prime: " << std::boolalpha << is_prime<9>::value << '\n';
+
+  // 8.2 Computing with constexpr, page 126
+  // 在某些上下文中需要一个编译期的值（比如数组长度或者非类型模板参数），编译器
+  // 在编译期间会试图去执行`constexpr`的调用，如果不成功则生成一个错误（比如一
+  // 个需要的常量在最后才能生成）
+  // 在某些其它上下文中，编译器可能在编译时尝试求值，也可能不尝试，但是如果这样
+  // 的计算失败，则不会发出错误，而是将调用保留为运行时调用。
+  // 上面是对原文的翻译，即`constexpr`的求值是在编译期还是运行期，现在不得而知
+  std::cout << "9 is prime: " << std::boolalpha << is_prime_c11(9) << '\n';
+  std::cout << "9 is prime: " << std::boolalpha << is_prime_c14(9) << '\n';
+}
+
+// 8.3 Execution Path Selection with Partial Specialization, page 128
+// 因为函数模板不支持偏特化，所以有以下几种选择：
+// 1, Use classes with static functions,
+// 2, Use `std::enable_if`, introduced in Section 6.3 on page 98,
+// 3, Use the SFINAE feature, which is introduced next, or
+// 4, Use the compile-time `if` feature, available since C++17, which is
+//    introduced below in Section 8.5 on page 135.
+// 早就听说`SFINAE`了，但是不理解它能做什么？现在知道它的一个功能了。
+```
+
+``` c++
+#include <iostream>
+#include <vector>
+
+// number of elements in a raw array
+template <typename T, unsigned N> std::size_t len(T (&)[N]) {
+  std::cout << "std::size_t len(T(&)[N]): ";
+  return N;
+}
+
+// number of elements for a type having size_type
+template <typename T> typename T::size_type len(T const &t) {
+  std::cout << "T::size_type len(T const &): ";
+  return t.size();
+}
+
+// 8.4 SFINAE (Substitution Failure Is Not An Error), page 130
+// 当替换一个候选对象的返回类型没有意义时，忽略它会导致编译器选择另一个
+// 参数匹配更差的候选对象。
+// 这句话应该说的就是这个`fallback`函数
+// fallback for all other types
+// 页解备注，page 131
+// 这样一个`fallback`函数常常用来提供一个更有用的默认操作，抛出异常或者
+// 包括一个断言并显示一个有用的错误信息。
+std::size_t len(...) {
+  std::cout << "std::size_t len(...): ";
+  return 0;
+}
+
+// SFINAE and Overload Resolution, page 132
+// 这里讲的“we SFINAE out a function"，意思是忽略掉这个函数，对于
+// 标准库中“shall not participate in overload resolution unless...”
+// 就是指在某种情况下忽略掉某个函数模板。
+// 这里也提到了95页的内容，再次提出某些情况下，函数类的成员函数模板
+// 可能比预定义的复制和移动构造函数更好的匹配，在这种情况下就需要用
+// 到`SFINAE`来忽略函数模板，使用预定义的构造函数，就像在`std::thread`
+// 中的那样。
+
+// 8.4.1 Expression SFINAE with decltype, page 133
+// 注：将`main()`函数中的`len(x)`放开，依然报没有`size()`的错误。
+// 书中所说下面的这个函数是想当`T`有一个`size_type()`成员但是没有
+// `size()`成员时被忽略。在函数声明中没有任何对`size()`成员的要求，
+// 当函数模板被选中时将产生一个错误。
+// 这里为什么要求进行`(void)`的强转？书上说是为了防止用户定义的逗号
+// 操作符重载的影响。
+template <typename T>
+auto len(T const &t) -> decltype((void)(t.size()), T::size_type()) {
+  return t.size();
+}
+
+int main() {
+  int a[10];
+  std::cout << len(a) << '\n';
+  std::cout << len("tmp") << '\n';
+
+  std::vector<int> v;
+  std::cout << len(v) << '\n';
+
+  int *p;
+  // 8.4 SFINAE (Substitution Failure Is Not An Error), page 131
+  // 如果没有上面的`fallback`版本的`len()`函数，则无法编译成功
+  std::cout << len(p) << '\n';
+
+  std::allocator<int> x;
+  // 这里编译错误是因为`std::allocator`没有`size()`成员函数
+  // std::cout << len(x) << '\n';
 }
 ```
