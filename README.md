@@ -472,6 +472,7 @@ void print(T first_arg, Types... args) {
 // 如果不提供`print()`无参函数，想通过`sizeof...`来计算`args`大小
 // 大于`0`时才调用`print()`是不可行的，因为模板实例化时，`if`的所
 // 有分支都将被实例化，所以无法通过编译
+
 int main() {
   std::string s("world");
   print(7.5, "hello", s);
@@ -1556,5 +1557,93 @@ int main() {
   std::allocator<int> x;
   // 这里编译错误是因为`std::allocator`没有`size()`成员函数
   // std::cout << len(x) << '\n';
+}
+```
+
+``` c++
+#include <iostream>
+#include <string>
+
+// 4.1.3 Operator sizeof..., page 58
+// 如果不提供`print()`无参函数，想通过`sizeof...`来计算`args`大小
+// 大于`0`时才调用`print()`是不可行的，因为模板实例化时，`if`的所
+// 有分支都将被实例化，所以无法通过编译
+// template <typename T, typename... Types>
+// void print(T first_arg, Types... args) {
+//   std::cout << first_arg << '\n';
+//   if (sizeof...(args) > 0) {
+//     print(args...);
+//   }
+// }
+
+// 8.5 Compile-Time if, page 134
+// 这里提到，前现讲的偏特化，`SFINAE`和`std::enable_if`是允许我们可以启用或禁
+// 用整个模板，这里的`compile-time if`是允许我们启用或禁用特定的语句。书中提
+// 到的之前第4章的内容我还有印象，即上面那个被注释掉的函数，可以使用下面方法
+// 来实现。
+template <typename T, typename... Types>
+void print(T const &first_arg, Types const &...args) {
+  std::cout << first_arg << '\n';
+  if constexpr (sizeof...(args) > 0) {
+    print(args...); // code only valid if `sizeof...(args) > 0` (since C++17)
+  }
+}
+
+// 8.5 Compile-Time if, page 134
+// 这里提到了`Section 1.1.3`，我翻回去看了下增加记忆。
+// 说模板实例化分为两个阶段：
+// 1，`definition time`阶段，没有进行实例化
+//  - 检查语法错误，比如有没有缺少分号
+//  - 使用不依赖于模板参数的未知名称（类型名，函数名）会被发现
+//  - 检查不依赖于模板参数的静态断言
+// 2，`instantiation time`阶段，模板代码再次被检查以确保所有代码有效
+// 这里我的理解应该是对的吧？
+// `else`分支是可能会被丢弃的如果`if constexpr`表达式成功的话
+// 书中注意`(even if discarded)`我的理解是，即这个`else`分支被丢弃，
+// 编译器同样报错，事实也确实如此。
+template <typename T> void foo(T t) {
+  if constexpr (std::is_integral_v<T>) {
+    if (t > 0) {
+      foo(t - 1); // OK
+    }
+  } else {
+    undeclared(
+        t); // error if not declared and not discarded (i.e. T is not integral)
+    // 下面这个始终编译出错
+    undeclared(); // error if not declared (even if discarded)
+    // 下面这个始终编译出错
+    static_assert(false, "no integral"); // always asserts (even if discarded)
+    static_assert(!std::is_integral_v<T>, "no integral"); // OK
+  }
+}
+
+int main() {
+  std::string s("world");
+  print(7.5, "hello", s);
+
+  foo<int>(0);
+}
+```
+
+``` c++
+#include <iostream>
+#include <limits>
+
+void foo(int) { std::cout << "foo()\n"; }
+
+// 8.5 Compile-Time if, page 135
+// `if constexpr`可以用在任何函数中，不仅仅存在于模板中，比如：
+int main() {
+  if constexpr (std::numeric_limits<char>::is_signed) {
+    foo(42); // OK
+  } else {
+    // 这里`if constexpr`用在`main()`函数中的表现和用在模板上不一样
+    // 在上面代码中，用在模板函数中，`else`实例化时被丢弃，这里好像
+    // 没有，编译始终出错，下面这三个语句都不能编译通过。
+    undeclared(42);                   // error if undeclared() not declared
+    static_assert(false, "unsigned"); // always asserts (even if discarded)
+    static_assert(!std::numeric_limits<char>::is_signed,
+                  "char is unsigned"); // OK
+  }
 }
 ```
