@@ -1845,3 +1845,126 @@ template <typename T> void foo(T x) {
 
 int main() { std::cout << max("hello", "world") << '\n'; }
 ```
+
+``` c++
+#include <iostream>
+
+template <typename T, T Z = T{}> class RefMem {
+private:
+  T zero;
+
+public:
+  RefMem() : zero{Z} {}
+};
+
+int null = 0;
+
+int main() {
+  RefMem<int> rm1, rm2;
+  rm1 = rm2;
+
+  // 11.4 References as Template Parameters, page 168
+  // 我对这里的出错突然好像有点心得，正如书中`tmplParamIsReference<int &>`一
+  // 样，当使用`<int &>`时，`zero`成员的类型就变成了`int &zero`，而模板中的
+  // `T Z = T{}`
+  // 就变成了：
+  // `int &Z = int &{}`
+  // 然后将`zero{Z}`赋值就出现下面这个错误？我理解的感觉好像也不对呀！
+  // 书中第169页提到第一点“The default initialization no longer works.”，这里
+  // 是不是指的就是我上面说的`int &{}`这种形式的模板实例化？然后第二点又说“You
+  // can no longer pass just 0 as initializer for an int.”那么这个错误提示应该
+  // 指的就是`{}`初始化操作符`0`不能给`int &`赋值，感觉就是这里。
+  // error: cannot bind non-const lvalue reference of type ‘int&’ to an rvalue
+  // of type ‘int’
+  // error: template argument 2 is invalid
+  // 上面这句错误提示印证了我刚才的分析，确实是模板第二个参数出错。
+  RefMem<int &> rm3;
+  // error: initializing ‘int&’ with ‘int’ in converted constant expression does
+  // not bind directly
+  // error: could not convert ‘0’ from ‘int’ to ‘int&’
+  RefMem<int &, 0> rm4;
+
+  extern int null;
+  RefMem<int &, null> rm5, rm6;
+  // 11.4 References as Template Parameters, page 169
+  // 第三点说为什么默认的赋值操作符会被删除：因为类中含有非`static`引用的成员的
+  // 话，默认赋值操作符就被删除了。
+  // 这是我不知道的，要记住这一点儿。
+  // error: use of deleted function ‘RefMem<int&, null>& RefMem<int&,
+  // null>::operator=(const RefMem<int&, null>&)’
+  rm5 = rm6;
+}
+```
+
+``` c++
+// 11.4 References as Template Parameters, page 169
+// 这里演示了为非类型模板参数使用引用类型会很危险
+
+#include <iostream>
+#include <vector>
+
+template <typename T, int &SZ> class Arr {
+private:
+  std::vector<T> elems;
+
+public:
+  Arr() : elems(SZ) {}
+  void print() const {
+    for (int i = 0; i < SZ; ++i) {
+      std::cout << elems[i] << ' ';
+    }
+  }
+};
+
+// 11.4 References as Template Parameters, page 170
+// 使用`decltype(auto)`很容易生成引用类型，所以这种用法很危险，可以默认使用`auto`来解决。
+template <typename T, decltype(auto) SZ> class Arr_c17;
+
+// 11.4 References as Template Parameters, page 170
+// 我们知道如果模板参数实例化时使用引用类型，那么默认赋值操作符会被删除，那么我既想使用
+// 模板参数为引用类型又不希望默认赋值操作符被删除要怎么做呢？书中说标准库中的`std::pair`
+// 和`std::tuple`实现了自己的赋值操作符取代默认行为，这似乎就是解决方案，即自己实现一个
+// 而不用默认的，这样编译器删除不了了，是这个意思吧？
+template <typename T1, typename T2> struct pair_page170 {
+  T1 first;
+  T2 second;
+
+  // default copy/move constructors are OK even with references
+  pair_page170(pair_page170 const &) = default;
+  pair_page170(pair_page170 &&) = default;
+
+  // but assignment operator have to be defined to be available with references
+  pair_page170 &operator=(pair_page170 const &p);
+  pair_page170 &operator=(pair_page170 &&p) noexcept;
+};
+
+// 11.4 References as Template Parameters, page 171
+// 由于可能产生的副作用很复杂，`C++17`标准库中的`std::optional`和`std::variant`对于引用
+// 类型是`ill-formed`的。
+
+int size = 10;
+
+int main() {
+  // 11.4 References as Template Parameters, page 169
+  // 这里出错是因为不能给`std::vector<>`使用引用类型做为元素使用。
+  // compile-time ERROR deep in the code of class std::vector<>
+  // Arr<int &, size> y;
+  Arr<int, size> x;
+  x.print();
+
+  // 11.4 References as Template Parameters, page 170
+  // 这里很容易理解，私自改变了`size`的值，导致`std::vector<>`的大小也变化了，
+  // 这可能会让程序崩溃的。即使使用`int const &`也不能解决这个问题，因为`size`
+  // 本身还是可以修改的。
+  size += 100;
+  x.print();
+}
+
+// 11.5 Defer Evaluations, page 172
+// 看不懂了这里，要是有个完整的例子就好了。
+
+// 11.6 Things to Consider When Writing Generic Libraries, page 172
+// 这里是对整个第一部分的总结，如果发生什么情况，可以使用哪节的知识，值得没事儿时翻翻。
+```
+
+到这里第一部分算是学完了，不足的是从第9章开始到这里第11章结束，学习进度有点快，还得再消化消化才能进行第二部分的学习。
