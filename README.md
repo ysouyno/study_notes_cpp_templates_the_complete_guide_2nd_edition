@@ -1421,7 +1421,7 @@ template <unsigned p, unsigned d> struct do_is_prime {
 
 // 8.1 Template Metaprogramming, page 125
 // 1，递归展开`do_is_prime<>`去迭代所有除数，从`p/2`至`2`
-// 2，编特化版本，即此结构体，`d`为`2`时做为结束递归的条件
+// 2，偏特化版本，即此结构体，`d`为`2`时做为结束递归的条件
 template <unsigned p> struct do_is_prime<p, 2> {
   static constexpr bool value = (p % 2 != 0);
 };
@@ -1662,3 +1662,186 @@ int main() {
 2. 因为`template class`的不准确性，书中避免使用`template class`这种说法。
 
 不搬这些概念和定义了，看原书去吧！
+
+## <2022-06-09 Thu>
+
+``` c++
+#include <iostream>
+#include <vector>
+
+// 11.1 Supporting Function Objects, page 158
+template <typename Iter, typename Callable>
+void t_foreach(Iter current, Iter end, Callable op) {
+  while (current != end) {
+    op(*current);
+    ++current;
+  }
+}
+
+void func(int i) { std::cout << "func() called for: " << i << '\n'; }
+
+class FuncObj {
+public:
+  void operator()(int i) const {
+    std::cout << "FuncObj::op() called for: " << i << '\n';
+  }
+};
+
+int main() {
+  std::vector<int> primes = {2, 3, 5, 7, 11, 13, 17, 19};
+
+  // 7.4 Dealing with String Literals and Raw Arrays, page 115
+  // 提到以传值调用`decays`变成指针，所以这里
+  // 11.1 Supporting Function Objects, page 159
+  // 传`func`会`decays`成指针
+  // 函数类型（function types）不能用`const`修饰，即使`t_foreach`中使用了
+  // 类型`Callable const &`，则也会被忽略掉（一般来说，在主流`c++`代码中
+  // 很少使用函数的引用）
+  t_foreach(primes.begin(), primes.end(),
+            func); // function as callable (decays to pointer)
+  t_foreach(primes.begin(), primes.end(),
+            &func); // function pointer as callable
+  t_foreach(primes.begin(), primes.end(), FuncObj());
+  t_foreach(primes.begin(), primes.end(),
+            [](int i) { std::cout << "lambda called for: " << i << '\n'; });
+}
+```
+
+``` c++
+#include <functional>
+#include <iostream>
+#include <string>
+#include <vector>
+
+// 11.2 Dealing with Member Functions and Additional Arguments, page 160
+// 前面例子中讲了所有可能的可调用例子，却单单没有成员函数这一项，幸运的
+// 是从`C++17`可以统一使用`std::invoke()`来调用任何可调用对象。
+// 注意：这里我们不能为第三个和第四个参数使用完美转发，因为第一次调用可能
+// 会“偷走”他们的值，导致后面的迭代操作发生错误。
+template <typename Iter, typename Callable, typename... Args>
+void t_foreach(Iter current, Iter end, Callable op, Args... args) {
+  while (current != end) {
+    std::invoke(op, args..., *current);
+    ++current;
+  }
+}
+
+class MyClass {
+public:
+  void memfunc(int i) const {
+    std::cout << "MyClass::memfunc() called for: " << i << '\n';
+  }
+};
+
+int main() {
+  std::vector<int> primes = {2, 3, 5, 7, 11, 13, 17, 19};
+
+  // 11.2 Dealing with Member Functions and Additional Arguments, page 161
+  // pass lambda as callable and an additional argument
+  t_foreach(
+      primes.begin(), primes.end(),
+      [](std::string const &prefix, int i) {
+        std::cout << prefix << i << '\n';
+      },
+      "- value: "); // 1st arg of lambda
+
+  // call obj.memfunc() for/with each elements in primes passed as argument
+  MyClass obj;
+  t_foreach(primes.begin(), primes.end(), &MyClass::memfunc, obj);
+}
+```
+
+``` c++
+#include <functional>  // for std::forward()
+#include <iostream>    // for std::cout
+#include <type_traits> // for std::is_same<> and invoke_result<>
+#include <utility>     // for std::invoke()
+
+// 11.1.3 Wrapping Function Calls, page 163
+// 原来`std::invoke()`的一个通用用法是（记录函数调用，计算调用花费时间，或者
+// 启动新线程时准备上下文）说白了就是包裹函数啦。
+// （11.1.2, page 160）中提到为什么不能用完美转发，但是紧接着的这一节却用上了
+// 为了能返回引用类型，你必须要使用`decltype(auto)`做为返回类型，而不是`auto`
+// 这个`decltype(auto)`是自`c++14`出现的，它是一个`placeholder type`
+// 如果声明在该函数内部声明一个局部变量`ret`，那么它的类型也必须是`decltype(auto)`
+// 不能使用`auto &&ret;`这样的声明，因为做为一个引用类型，`auto &&`延伸了返回
+// 值的生命周期直到它的作用域结束，但是不会超过函数调用方的`return`语句。
+// 另`decltype(auto)`不允许用在`void`返回值的函数上，因为`void`是`incomplete
+// type`
+template <typename Callable, typename... Args>
+decltype(auto) call(Callable &&op, Args &&...args) {
+  if constexpr (std::is_same_v<std::invoke_result_t<Callable, Args...>, void>) {
+    // return type is void
+    std::invoke(std::forward<Callable>(op), std::forward<Args>(args)...);
+    return;
+  } else {
+    // return type is not void
+    decltype(auto) ret{
+        std::invoke(std::forward<Callable>(op), std::forward<Args>(args)...)};
+    return ret;
+  }
+}
+
+void ret_void(int i) { std::cout << "ret_void() called\n"; }
+
+long ret_long() {
+  std::cout << "ret_long() called\n";
+  return 1;
+}
+
+int main() {
+  call(ret_void, 1);
+  call(ret_long);
+}
+```
+
+``` c++
+// 11.2.2 std::addressof(), page 166
+#include <iostream>
+
+template <typename T> void f(T &&x) {
+  auto p = &x;                // might fail with overloaded operator &
+  auto q = std::addressof(x); // works even with overloaded operator &
+  std::cout << "p: " << static_cast<void *>(p) << '\n';
+  std::cout << "q: " << static_cast<void *>(q) << '\n';
+}
+
+int main() {
+  int i = 0;
+  f(&i);
+}
+```
+
+``` c++
+#include <iostream>
+#include <utility>
+
+// 11.2.3 std::declval(), page 166
+// 这里的信息量有点大
+// 1，为了避免在三元操作符中调用`T1`和`T2`的构造函数，用`std::declval()`
+// 来使用对应类型的对象，而不用真正的去创建它们，不过这只能在`decltype`
+// 的`unevaluated context`中出现。
+// 2，为什么要用`std::decay<>`这个`type traits`？这是为了确保默认返回类型
+// 不会是引用类型，因为`std::declval()`会生成右值引用，你在调用`max`时会
+// 得到返回类型为`int&&`。
+template <typename T1, typename T2,
+          typename RT = std::decay_t<decltype(true ? std::declval<T1>()
+                                                   : std::declval<T2>())>>
+RT max(T1 a, T2 b) {
+  return b < a ? a : b;
+}
+
+int get() { return 1; }
+
+void set(int) {}
+
+// 11.3 Perfect Forwarding Temporaries, page 167
+// 记住这个用法，这样可以避免中间的值的额外拷贝。
+template <typename T> void foo(T x) {
+  auto &&val = get(x);
+  // perfectly forward the return value of get() to set()
+  set(std::forward<decltype(val)>(val));
+}
+
+int main() { std::cout << max("hello", "world") << '\n'; }
+```
